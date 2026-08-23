@@ -1,18 +1,36 @@
 #include <Arduino.h>
 
-// put function declarations here:
-int myFunction(int, int);
+#include "DisplayManager.h"
+#include "WiFiProvisioning.h"
+#include "config.h"
+
+namespace {
+DisplayManager display;
+WiFiProvisioning wifi;
+}  // namespace
 
 void setup() {
-  // put your setup code here, to run once:
-  int result = myFunction(2, 3);
+  Serial.begin(Config::SERIAL_BAUD_RATE);
+  delay(200);
+
+  Serial.println();
+  Serial.printf("[BOOT] %s firmware starting\n", Config::PRODUCT_NAME);
+  Serial.printf("[BOOT] Firmware version: %s\n", Config::FIRMWARE_VERSION);
+
+  display.begin();
+  display.showSplash();
+  delay(Config::SPLASH_DURATION_MS);
+
+  if (!wifi.connect(display)) {
+    Serial.println("[WIFI] Restarting after provisioning failure");
+    delay(3000);
+    ESP.restart();
+  }
+
+  display.showConnected(Config::FIRMWARE_VERSION, WiFi.localIP());
+  Serial.println("[APP] Main screen loaded");
 }
 
 void loop() {
-  // put your main code here, to run repeatedly:
-}
-
-// put function definitions here:
-int myFunction(int x, int y) {
-  return x + y;
+  delay(1000);
 }
