@@ -85,6 +85,29 @@ void DisplayManager::showConnected(const char* firmwareVersion,
                       display_.width() / 2, 215);
 }
 
+void DisplayManager::showOtaStatus(const String& title, const String& detail) {
+  display_.fillScreen(BackgroundColor);
+  display_.setTextDatum(MC_DATUM);
+  display_.setTextColor(TextColor, BackgroundColor);
+  display_.setTextSize(3);
+  display_.drawString(title, display_.width() / 2, 92);
+  display_.setTextSize(2);
+  display_.drawString(detail, display_.width() / 2, 142);
+}
+
+void DisplayManager::showOtaProgress(size_t received, size_t total) {
+  const uint8_t percent = total == 0 ? 0 : (received * 100U) / total;
+  display_.fillRect(20, 155, display_.width() - 40, 54, BackgroundColor);
+  display_.drawRect(20, 160, display_.width() - 40, 20, TextColor);
+  const int16_t progressWidth =
+      ((display_.width() - 44) * static_cast<uint32_t>(percent)) / 100U;
+  display_.fillRect(22, 162, progressWidth, 16, BrandGreen);
+  display_.setTextDatum(MC_DATUM);
+  display_.setTextColor(TextColor, BackgroundColor);
+  display_.setTextSize(2);
+  display_.drawString(String(percent) + "%", display_.width() / 2, 198);
+}
+
 void DisplayManager::drawQrCode(const String& value, int16_t centerX,
                                 int16_t centerY) {
   QRCode qrCode;
