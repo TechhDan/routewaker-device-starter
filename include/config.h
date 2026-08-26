@@ -21,8 +21,8 @@
 namespace Config
 {
 
-    static constexpr char FIRMWARE_VERSION[] = "2.0.0";
-    static constexpr char PRODUCT_NAME[] = "Route Waker";
+    static constexpr char FIRMWARE_VERSION[] = "1.0.0";
+    static constexpr char PRODUCT_NAME[] = "Route Waker Display";
     static constexpr char SETUP_AP_NAME[] = "Route Waker-Setup";
 
     static constexpr uint32_t SERIAL_BAUD_RATE = 115200;
