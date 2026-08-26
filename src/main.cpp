@@ -1,4 +1,5 @@
 #include <Arduino.h>
+#include <time.h>
 
 #include "DisplayManager.h"
 #include "OtaManager.h"
@@ -9,6 +10,36 @@ namespace {
 DisplayManager display;
 WiFiProvisioning wifi;
 OtaManager ota;
+
+bool otaNeedsTrustedClock() {
+  return String(Config::OTA_API_BASE_URL).startsWith("https://") &&
+         strlen(Config::OTA_ROOT_CA) > 0;
+}
+
+bool synchronizeClock() {
+  Serial.println("[TIME] Synchronizing clock for TLS validation");
+  configTime(0, 0, Config::NTP_PRIMARY_SERVER, Config::NTP_FALLBACK_SERVER);
+
+  const unsigned long startedAt = millis();
+  time_t now = time(nullptr);
+  while (now < 1704067200 &&
+         millis() - startedAt < Config::NTP_SYNC_TIMEOUT_MS) {
+    delay(250);
+    now = time(nullptr);
+  }
+
+  if (now < 1704067200) {
+    Serial.println("[TIME] Synchronization failed; secure OTA is unavailable");
+    return false;
+  }
+
+  struct tm utcTime;
+  gmtime_r(&now, &utcTime);
+  char timestamp[25];
+  strftime(timestamp, sizeof(timestamp), "%Y-%m-%dT%H:%M:%SZ", &utcTime);
+  Serial.printf("[TIME] Clock synchronized: %s\n", timestamp);
+  return true;
+}
 }  // namespace
 
 void setup() {
@@ -34,6 +65,11 @@ void setup() {
 
   if (!ota.isConfigured()) {
     Serial.println("[OTA] Disabled: include/ota_secrets.h is not configured");
+    return;
+  }
+
+  if (otaNeedsTrustedClock() && !synchronizeClock()) {
+    Serial.println("[OTA] Skipped because the TLS certificate cannot be validated");
     return;
   }
 

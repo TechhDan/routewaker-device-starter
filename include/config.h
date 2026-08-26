@@ -30,6 +30,10 @@ namespace Config
     static constexpr uint32_t WIFI_CONNECT_TIMEOUT_SECONDS = 20;
     static constexpr uint32_t PORTAL_TIMEOUT_SECONDS = 0; // Keep setup open until configured.
 
+    static constexpr char NTP_PRIMARY_SERVER[] = "pool.ntp.org";
+    static constexpr char NTP_FALLBACK_SERVER[] = "time.nist.gov";
+    static constexpr uint16_t NTP_SYNC_TIMEOUT_MS = 15000;
+
     static constexpr char OTA_API_BASE_URL[] = ROUTEWAKER_OTA_API_BASE_URL;
     static constexpr char OTA_DEVICE_TOKEN[] = ROUTEWAKER_OTA_DEVICE_TOKEN;
     static constexpr char OTA_ROOT_CA[] = ROUTEWAKER_OTA_ROOT_CA;

@@ -52,7 +52,16 @@ URL selected above so the returned artifact URL is reachable by the ESP32.
 
 For production, also configure `ROUTEWAKER_OTA_ROOT_CA`. Without a CA, HTTPS
 is encrypted but the server certificate is not authenticated; the firmware
-logs a warning on every request.
+logs a warning on every request. When a CA is configured for an HTTPS API, the
+firmware synchronizes its UTC clock with `pool.ntp.org` (falling back to
+`time.nist.gov`) before making OTA requests. If time synchronization fails,
+secure OTA is skipped rather than attempting certificate validation with an
+invalid clock.
+
+Define the PEM certificate as adjacent quoted C strings. Include `\n` after
+every PEM line and a trailing `\` on every macro line except the last; see
+`include/ota_secrets.example.h`. A multiline raw string directly inside a
+`#define` is not valid without preprocessor line continuations.
 
 ## Run the v1 to v2 test
 
