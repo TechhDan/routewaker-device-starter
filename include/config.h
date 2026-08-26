@@ -7,7 +7,7 @@
 #endif
 
 #ifndef ROUTEWAKER_OTA_API_BASE_URL
-#define ROUTEWAKER_OTA_API_BASE_URL ""
+#define ROUTEWAKER_OTA_API_BASE_URL "https://ota.routewaker.com"
 #endif
 
 #ifndef ROUTEWAKER_OTA_DEVICE_TOKEN

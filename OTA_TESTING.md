@@ -28,15 +28,27 @@ Hardware revision: esp32-2432s028-v1
 Release channel: stable
 ```
 
-Copy `include/ota_secrets.example.h` to `include/ota_secrets.h`, then set:
+Copy `include/ota_secrets.example.h` to `include/ota_secrets.h`, then set the
+device token:
 
 ```cpp
-#define ROUTEWAKER_OTA_API_BASE_URL "https://your-platform-host"
 #define ROUTEWAKER_OTA_DEVICE_TOKEN "rwd_the_one_time_token"
 ```
 
-`ota_secrets.h` is ignored by Git. The platform's `APP_URL` must be the same
-public base URL so the returned artifact URL is reachable by the ESP32.
+The firmware defaults to the production API at `https://ota.routewaker.com`.
+For local development, override it with the development host already used by
+this project:
+
+```cpp
+#define ROUTEWAKER_OTA_API_BASE_URL "http://192.168.1.98:8000"
+```
+
+Use the development computer's LAN address rather than `localhost`, because
+`localhost` on the device refers to the ESP32. Update the address if the
+development computer's DHCP lease changes.
+
+`ota_secrets.h` is ignored by Git. The platform's `APP_URL` must match the base
+URL selected above so the returned artifact URL is reachable by the ESP32.
 
 For production, also configure `ROUTEWAKER_OTA_ROOT_CA`. Without a CA, HTTPS
 is encrypted but the server certificate is not authenticated; the firmware
