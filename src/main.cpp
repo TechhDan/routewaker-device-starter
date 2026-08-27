@@ -2,6 +2,7 @@
 #include <time.h>
 
 #include "DisplayManager.h"
+#include "DeviceIdentity.h"
 #include "OtaManager.h"
 #include "WiFiProvisioning.h"
 #include "config.h"
@@ -49,9 +50,11 @@ void setup() {
   Serial.println();
   Serial.printf("[BOOT] %s firmware starting\n", Config::PRODUCT_NAME);
   Serial.printf("[BOOT] Firmware version: %s\n", Config::FIRMWARE_VERSION);
+  const String hardwareId = DeviceIdentity::hardwareId();
+  Serial.printf("[DEVICE] Hardware ID: %s\n", hardwareId.c_str());
 
   display.begin();
-  display.showSplash();
+  display.showSplash(hardwareId);
   delay(Config::SPLASH_DURATION_MS);
 
   if (!wifi.connect(display)) {
@@ -60,7 +63,7 @@ void setup() {
     ESP.restart();
   }
 
-  display.showConnected(Config::FIRMWARE_VERSION, WiFi.localIP());
+  display.showConnected(Config::FIRMWARE_VERSION, WiFi.localIP(), hardwareId);
   Serial.println("[APP] Main screen loaded");
 
   if (!ota.isConfigured()) {
@@ -87,7 +90,7 @@ void setup() {
 
   if (otaResult == OtaManager::Result::NoUpdate) {
     Serial.println("[OTA] Device firmware is current");
-    display.showConnected(Config::FIRMWARE_VERSION, WiFi.localIP());
+    display.showConnected(Config::FIRMWARE_VERSION, WiFi.localIP(), hardwareId);
   } else if (otaResult == OtaManager::Result::Installed) {
     Serial.printf("[OTA] Version %s staged; restarting\n",
                   ota.availableVersion().c_str());
@@ -96,7 +99,7 @@ void setup() {
     ESP.restart();
   } else if (otaResult == OtaManager::Result::Failed) {
     Serial.printf("[OTA] Update failed: %s\n", ota.lastError().c_str());
-    display.showConnected(Config::FIRMWARE_VERSION, WiFi.localIP());
+    display.showConnected(Config::FIRMWARE_VERSION, WiFi.localIP(), hardwareId);
   }
 }
 

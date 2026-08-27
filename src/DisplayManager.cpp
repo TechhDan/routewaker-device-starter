@@ -26,7 +26,7 @@ void DisplayManager::begin() {
   Serial.println("[DISPLAY] ILI9341 display initialized");
 }
 
-void DisplayManager::showSplash() {
+void DisplayManager::showSplash(const String& hardwareId) {
   Serial.println("[DISPLAY] Splash screen");
 
   display_.fillScreen(BackgroundColor);
@@ -34,7 +34,13 @@ void DisplayManager::showSplash() {
   display_.setTextColor(TextColor, BackgroundColor);
   display_.setTextSize(4);
   display_.drawString(Config::PRODUCT_NAME, display_.width() / 2,
-                      display_.height() / 2);
+                      (display_.height() / 2) - 18);
+  display_.setTextSize(2);
+  display_.drawString("Hardware ID", display_.width() / 2,
+                      (display_.height() / 2) + 28);
+  display_.setTextColor(BrandGreen, BackgroundColor);
+  display_.drawString(hardwareId, display_.width() / 2,
+                      (display_.height() / 2) + 52);
 }
 
 void DisplayManager::showProvisioning(const String& accessPointName,
@@ -61,12 +67,14 @@ void DisplayManager::showProvisioning(const String& accessPointName,
 }
 
 void DisplayManager::showConnected(const char* firmwareVersion,
-                                   const IPAddress& deviceIp) {
+                                   const IPAddress& deviceIp,
+                                   const String& hardwareId) {
   Serial.println("[DISPLAY] Connected/version screen");
   Serial.println(Config::PRODUCT_NAME);
   Serial.println("Firmware Version");
   Serial.println(majorVersionLabel(firmwareVersion));
   Serial.printf("Wi-Fi: Connected (%s)\n", deviceIp.toString().c_str());
+  Serial.printf("Hardware ID: %s\n", hardwareId.c_str());
 
   display_.fillScreen(BackgroundColor);
   display_.setTextDatum(MC_DATUM);
@@ -82,7 +90,8 @@ void DisplayManager::showConnected(const char* firmwareVersion,
   display_.setTextColor(TextColor, BackgroundColor);
   display_.setTextSize(1);
   display_.drawString("Wi-Fi: Connected  " + deviceIp.toString(),
-                      display_.width() / 2, 215);
+                      display_.width() / 2, 205);
+  display_.drawString("Hardware ID: " + hardwareId, display_.width() / 2, 222);
 }
 
 void DisplayManager::showOtaStatus(const String& title, const String& detail) {
