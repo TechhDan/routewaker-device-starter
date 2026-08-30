@@ -16,6 +16,7 @@ namespace {
 constexpr char OtaPreferencesNamespace[] = "routewaker-ota";
 constexpr char PendingReleaseKey[] = "release";
 constexpr char PendingVersionKey[] = "version";
+constexpr char PendingEventKey[] = "event_id";
 
 bool validSha256(const String& value) {
   if (value.length() != 64) return false;
@@ -66,37 +67,77 @@ bool beginRequest(HTTPClient& http, Client& client, const String& url) {
   return http.begin(client, url);
 }
 
-void addApiHeaders(HTTPClient& http) {
+void addApiHeaders(HTTPClient& http, const String& deviceToken) {
   http.addHeader("Accept", "application/json");
-  http.addHeader("Authorization", "Bearer " + String(Config::OTA_DEVICE_TOKEN));
+  http.addHeader("Authorization", "Bearer " + deviceToken);
 }
 }  // namespace
 
+void OtaManager::configure(const String& platformUrl, const String& deviceToken) {
+  platformUrl_ = platformUrl;
+  deviceToken_ = deviceToken;
+}
+
 bool OtaManager::isConfigured() const {
-  return strlen(Config::OTA_API_BASE_URL) > 0 &&
-         strlen(Config::OTA_DEVICE_TOKEN) > 0;
+  return !platformUrl_.isEmpty() && deviceToken_.startsWith("rwd_");
+}
+
+bool OtaManager::reportInstallation(uint64_t releaseId, const String& eventId) {
+  return sendEvent(releaseId, "installation_succeeded", "", "", eventId);
 }
 
 bool OtaManager::reportPendingInstallation() {
+  lastError_ = "";
   if (!isConfigured()) return true;
 
   Preferences preferences;
-  if (!preferences.begin(OtaPreferencesNamespace, false)) return false;
-  const uint32_t releaseId = preferences.getUInt(PendingReleaseKey, 0);
+  if (!preferences.begin(OtaPreferencesNamespace, false)) {
+    lastError_ = "Unable to open pending installation state in NVS.";
+    return false;
+  }
+  const uint64_t releaseId = preferences.getULong64(PendingReleaseKey, 0);
   const String expectedVersion = preferences.getString(PendingVersionKey, "");
+  String pendingEventId = preferences.getString(PendingEventKey, "");
   preferences.end();
 
   if (releaseId == 0) return true;
   if (expectedVersion != Config::FIRMWARE_VERSION) {
-    Serial.printf("[OTA] Pending version %s did not boot; running %s\n",
-                  expectedVersion.c_str(), Config::FIRMWARE_VERSION);
+    lastError_ = "Pending installation expects firmware " + expectedVersion +
+                 ", but the running firmware is " +
+                 String(Config::FIRMWARE_VERSION) + ".";
     return false;
   }
 
-  if (!sendEvent(releaseId, "installation_succeeded")) return false;
-  if (preferences.begin(OtaPreferencesNamespace, false)) {
-    preferences.clear();
+  if (pendingEventId.isEmpty()) {
+    pendingEventId = eventUuid();
+    if (!preferences.begin(OtaPreferencesNamespace, false)) {
+      lastError_ = "Unable to reopen pending installation state in NVS.";
+      return false;
+    }
+    const bool saved = preferences.putString(PendingEventKey, pendingEventId) ==
+                       pendingEventId.length();
     preferences.end();
+    if (!saved) {
+      lastError_ = "Unable to persist the pending installation event UUID.";
+      return false;
+    }
+  }
+  if (!sendEvent(releaseId, "installation_succeeded", "", "",
+                 pendingEventId)) {
+    if (lastError_.isEmpty()) {
+      lastError_ = "The platform could not accept the installation confirmation.";
+    }
+    return false;
+  }
+  if (!preferences.begin(OtaPreferencesNamespace, false)) {
+    lastError_ = "Installation was accepted, but pending NVS state could not be opened for cleanup.";
+    return false;
+  }
+  const bool cleared = preferences.clear();
+  preferences.end();
+  if (!cleared) {
+    lastError_ = "Installation was accepted, but pending NVS state could not be cleared.";
+    return false;
   }
   Serial.printf("[OTA] Confirmed installation of version %s\n",
                 Config::FIRMWARE_VERSION);
@@ -122,16 +163,37 @@ OtaManager::Result OtaManager::checkAndInstall(
               lastError_);
     return Result::Failed;
   }
-  sendEvent(manifest.releaseId, "download_completed");
-
   Preferences preferences;
   if (!preferences.begin(OtaPreferencesNamespace, false)) {
-    lastError_ = "Unable to save pending update state.";
+    const esp_err_t recovery =
+        esp_ota_set_boot_partition(esp_ota_get_running_partition());
+    lastError_ = recovery == ESP_OK
+                     ? "Unable to save pending update state; update not activated."
+                     : "Unable to save pending update state or restore the current boot image.";
     return Result::Failed;
   }
-  preferences.putUInt(PendingReleaseKey, manifest.releaseId);
-  preferences.putString(PendingVersionKey, manifest.version);
+  const String pendingEventId = eventUuid();
+  const bool releaseSaved =
+      preferences.putULong64(PendingReleaseKey, manifest.releaseId) ==
+      sizeof(manifest.releaseId);
+  const bool versionSaved =
+      preferences.putString(PendingVersionKey, manifest.version) ==
+      manifest.version.length();
+  const bool eventSaved =
+      preferences.putString(PendingEventKey, pendingEventId) ==
+      pendingEventId.length();
+  if (!releaseSaved || !versionSaved || !eventSaved) {
+    preferences.clear();
+    preferences.end();
+    const esp_err_t recovery =
+        esp_ota_set_boot_partition(esp_ota_get_running_partition());
+    lastError_ = recovery == ESP_OK
+                     ? "Unable to save all pending update state; update not activated."
+                     : "Unable to save pending update state or restore the current boot image.";
+    return Result::Failed;
+  }
   preferences.end();
+  sendEvent(manifest.releaseId, "download_completed");
   return Result::Installed;
 }
 
@@ -156,7 +218,7 @@ bool OtaManager::sendHeartbeat() {
   } else {
     if (!beginRequest(http, plainClient, url)) return false;
   }
-  addApiHeaders(http);
+  addApiHeaders(http, deviceToken_);
   http.addHeader("Content-Type", "application/json");
   statusCode = http.POST(body);
   http.end();
@@ -182,7 +244,7 @@ bool OtaManager::fetchManifest(Manifest& manifest, bool& updateAvailable) {
   } else {
     if (!beginRequest(http, plainClient, url)) return false;
   }
-  addApiHeaders(http);
+  addApiHeaders(http, deviceToken_);
   statusCode = http.GET();
   if (statusCode > 0) response = http.getString();
   http.end();
@@ -201,7 +263,7 @@ bool OtaManager::fetchManifest(Manifest& manifest, bool& updateAvailable) {
   if (!updateAvailable) return true;
 
   JsonObject release = document["firmwareRelease"];
-  manifest.releaseId = release["id"] | 0;
+  manifest.releaseId = release["id"].as<uint64_t>();
   manifest.version = String(release["version"] | "");
   manifest.artifactUrl = String(release["artifactUrl"] | "");
   manifest.artifactSize = release["artifactSize"] | 0;
@@ -238,7 +300,7 @@ bool OtaManager::downloadAndStage(const Manifest& manifest,
   } else if (!http.begin(plainClient, manifest.artifactUrl)) {
     return false;
   }
-  addApiHeaders(http);
+  addApiHeaders(http, deviceToken_);
   statusCode = http.GET();
   if (statusCode != HTTP_CODE_OK) {
     lastError_ = "Firmware download failed (" + String(statusCode) + ").";
@@ -308,11 +370,12 @@ bool OtaManager::downloadAndStage(const Manifest& manifest,
   return true;
 }
 
-bool OtaManager::sendEvent(uint32_t releaseId, const char* eventType,
+bool OtaManager::sendEvent(uint64_t releaseId, const char* eventType,
                            const String& failureCode,
-                           const String& failureMessage) {
+                           const String& failureMessage,
+                           const String& eventId) {
   JsonDocument document;
-  document["eventId"] = eventUuid();
+  document["eventId"] = eventId.isEmpty() ? eventUuid() : eventId;
   document["firmwareReleaseId"] = releaseId;
   document["eventType"] = eventType;
   if (!failureCode.isEmpty()) document["failureCode"] = failureCode;
@@ -327,19 +390,30 @@ bool OtaManager::sendEvent(uint32_t releaseId, const char* eventType,
   int statusCode = -1;
   if (url.startsWith("https://")) {
     configureTls(secureClient);
-    if (!beginRequest(http, secureClient, url)) return false;
+    if (!beginRequest(http, secureClient, url)) {
+      lastError_ = "Unable to start the installation event request.";
+      return false;
+    }
   } else {
-    if (!beginRequest(http, plainClient, url)) return false;
+    if (!beginRequest(http, plainClient, url)) {
+      lastError_ = "Unable to start the installation event request.";
+      return false;
+    }
   }
-  addApiHeaders(http);
+  addApiHeaders(http, deviceToken_);
   http.addHeader("Content-Type", "application/json");
   statusCode = http.POST(body);
   http.end();
-  return statusCode >= 200 && statusCode < 300;
+  if (statusCode < 200 || statusCode >= 300) {
+    lastError_ = "Installation event was rejected or not received (" +
+                 String(statusCode) + ").";
+    return false;
+  }
+  return true;
 }
 
 String OtaManager::endpoint(const char* path) const {
-  String baseUrl(Config::OTA_API_BASE_URL);
+  String baseUrl(platformUrl_);
   while (baseUrl.endsWith("/")) baseUrl.remove(baseUrl.length() - 1);
   return baseUrl + path;
 }

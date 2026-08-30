@@ -2,6 +2,7 @@
 
 #include <WiFiManager.h>
 
+#include "DeviceIdentity.h"
 #include "DisplayManager.h"
 #include "config.h"
 
@@ -32,7 +33,8 @@ bool WiFiProvisioning::connect(DisplayManager& display) {
   manager.setAPCallback(onPortalStarted);
 
   provisioningDisplay = &display;
-  const bool connected = manager.autoConnect(Config::SETUP_AP_NAME);
+  const String accessPointName = DeviceIdentity::setupAccessPointName();
+  const bool connected = manager.autoConnect(accessPointName.c_str());
   provisioningDisplay = nullptr;
 
   if (!connected) {
