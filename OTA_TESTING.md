@@ -30,20 +30,16 @@ Install the starter through the Device Provisioner. It writes the temporary
 installer network plus the platform URL, device token, release ID, and expected
 version to `rw-prov`. The starter permanently copies only the URL and token.
 
-The firmware defaults to the production API at `https://ota.routewaker.com`.
-For local development, override it with the development host already used by
-this project:
+The runtime platform URL always comes from the provisioner handoff and is
+stored permanently in the `rw-device` NVS namespace. For local development,
+configure the provisioner with the locally reachable platform URL before it
+installs the starter. Use the development computer's LAN address rather than
+`localhost`, because `localhost` on the device refers to the ESP32. Update the
+provisioner configuration if the development computer's DHCP lease changes.
 
-```cpp
-#define ROUTEWAKER_OTA_API_BASE_URL "http://192.168.1.98:8000"
-```
-
-Use the development computer's LAN address rather than `localhost`, because
-`localhost` on the device refers to the ESP32. Update the address if the
-development computer's DHCP lease changes.
-
-`ota_secrets.h` is ignored by Git. The platform's `APP_URL` must match the base
-URL selected above so the returned artifact URL is reachable by the ESP32.
+The platform's `APP_URL` must match that provisioner-supplied base URL so the
+returned artifact URL is reachable by the ESP32. `ota_secrets.h` is ignored by
+Git and is used only for TLS root CA configuration.
 
 For production, also configure `ROUTEWAKER_OTA_ROOT_CA`. Without a CA, HTTPS
 is encrypted but the server certificate is not authenticated; the firmware

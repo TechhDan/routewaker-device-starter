@@ -35,10 +35,12 @@ feedback. A real firmware application should retain the OTA calls while
 replacing the starter screen and empty runtime loop with its product-specific
 behavior.
 
-Production devices obtain their API URL and permanent `rwd_...` token from the
-provisioner. `include/ota_secrets.h` remains available for an optional API URL
-override during development and for `ROUTEWAKER_OTA_ROOT_CA`; it never contains
-the device token. See
+Devices obtain their API URL and permanent `rwd_...` token from the provisioner
+handoff, and the starter stores them in the `rw-device` NVS namespace. This is
+also the URL source during development: local testing requires a provisioner
+configured with a platform URL reachable by the ESP32. `include/ota_secrets.h`
+remains available for `ROUTEWAKER_OTA_ROOT_CA`; it never contains the platform
+URL or device token. See
 `OTA_TESTING.md` for the end-to-end release test procedure.
 
 On the first production boot the starter connects only to the installer Wi-Fi,

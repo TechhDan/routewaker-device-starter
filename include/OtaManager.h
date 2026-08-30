@@ -19,7 +19,7 @@ class OtaManager {
 
  private:
   struct Manifest {
-    uint32_t releaseId = 0;
+    uint64_t releaseId = 0;
     String version;
     String artifactUrl;
     String sha256;

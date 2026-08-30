@@ -91,7 +91,7 @@ bool OtaManager::reportPendingInstallation() {
 
   Preferences preferences;
   if (!preferences.begin(OtaPreferencesNamespace, false)) return false;
-  const uint32_t releaseId = preferences.getUInt(PendingReleaseKey, 0);
+  const uint64_t releaseId = preferences.getULong64(PendingReleaseKey, 0);
   const String expectedVersion = preferences.getString(PendingVersionKey, "");
   String pendingEventId = preferences.getString(PendingEventKey, "");
   preferences.end();
@@ -141,17 +141,37 @@ OtaManager::Result OtaManager::checkAndInstall(
               lastError_);
     return Result::Failed;
   }
-  sendEvent(manifest.releaseId, "download_completed");
-
   Preferences preferences;
   if (!preferences.begin(OtaPreferencesNamespace, false)) {
-    lastError_ = "Unable to save pending update state.";
+    const esp_err_t recovery =
+        esp_ota_set_boot_partition(esp_ota_get_running_partition());
+    lastError_ = recovery == ESP_OK
+                     ? "Unable to save pending update state; update not activated."
+                     : "Unable to save pending update state or restore the current boot image.";
     return Result::Failed;
   }
-  preferences.putUInt(PendingReleaseKey, manifest.releaseId);
-  preferences.putString(PendingVersionKey, manifest.version);
-  preferences.putString(PendingEventKey, eventUuid());
+  const String pendingEventId = eventUuid();
+  const bool releaseSaved =
+      preferences.putULong64(PendingReleaseKey, manifest.releaseId) ==
+      sizeof(manifest.releaseId);
+  const bool versionSaved =
+      preferences.putString(PendingVersionKey, manifest.version) ==
+      manifest.version.length();
+  const bool eventSaved =
+      preferences.putString(PendingEventKey, pendingEventId) ==
+      pendingEventId.length();
+  if (!releaseSaved || !versionSaved || !eventSaved) {
+    preferences.clear();
+    preferences.end();
+    const esp_err_t recovery =
+        esp_ota_set_boot_partition(esp_ota_get_running_partition());
+    lastError_ = recovery == ESP_OK
+                     ? "Unable to save all pending update state; update not activated."
+                     : "Unable to save pending update state or restore the current boot image.";
+    return Result::Failed;
+  }
   preferences.end();
+  sendEvent(manifest.releaseId, "download_completed");
   return Result::Installed;
 }
 
@@ -221,7 +241,7 @@ bool OtaManager::fetchManifest(Manifest& manifest, bool& updateAvailable) {
   if (!updateAvailable) return true;
 
   JsonObject release = document["firmwareRelease"];
-  manifest.releaseId = release["id"] | 0;
+  manifest.releaseId = release["id"].as<uint64_t>();
   manifest.version = String(release["version"] | "");
   manifest.artifactUrl = String(release["artifactUrl"] | "");
   manifest.artifactSize = release["artifactSize"] | 0;
