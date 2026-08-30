@@ -17,6 +17,10 @@ DisplayManager display;
 WiFiProvisioning wifi;
 OtaManager ota;
 String hardwareId;
+constexpr unsigned long PendingConfirmationRetryMs = 45000;
+bool pendingConfirmationRetry = false;
+bool normalOtaLifecycleComplete = false;
+unsigned long nextPendingConfirmationAttempt = 0;
 
 bool otaNeedsTrustedClock(const String& platformUrl) {
   return platformUrl.startsWith("https://") &&
@@ -129,6 +133,51 @@ bool completeProvisionerHandoff(ProvisioningHandoff& handoff) {
   Serial.println("[HANDOFF] Provisioner data and installer Wi-Fi erased");
   return true;
 }
+
+void runNormalOtaLifecycle() {
+  if (normalOtaLifecycleComplete) return;
+  normalOtaLifecycleComplete = true;
+
+  Serial.println("[OTA] Checking for firmware updates");
+  bool updateScreenShown = false;
+  const OtaManager::Result otaResult = ota.checkAndInstall(
+      [&updateScreenShown](size_t received, size_t total) {
+        if (!updateScreenShown) {
+          display.showOtaStatus("Updating", "Downloading firmware");
+          updateScreenShown = true;
+        }
+        display.showOtaProgress(received, total);
+      });
+
+  if (otaResult == OtaManager::Result::NoUpdate) {
+    Serial.println("[OTA] Device firmware is current");
+    display.showConnected(Config::FIRMWARE_VERSION, WiFi.localIP(), hardwareId);
+  } else if (otaResult == OtaManager::Result::Installed) {
+    Serial.printf("[OTA] Version %s staged; restarting\n",
+                  ota.availableVersion().c_str());
+    display.showOtaStatus("Update Ready", "Restarting...");
+    delay(1500);
+    ESP.restart();
+  } else if (otaResult == OtaManager::Result::Failed) {
+    Serial.printf("[OTA] Update failed: %s\n", ota.lastError().c_str());
+    display.showConnected(Config::FIRMWARE_VERSION, WiFi.localIP(), hardwareId);
+  }
+}
+
+void attemptPendingInstallationConfirmation() {
+  if (ota.reportPendingInstallation()) {
+    pendingConfirmationRetry = false;
+    display.showConnected(Config::FIRMWARE_VERSION, WiFi.localIP(), hardwareId);
+    runNormalOtaLifecycle();
+    return;
+  }
+
+  pendingConfirmationRetry = true;
+  nextPendingConfirmationAttempt = millis() + PendingConfirmationRetryMs;
+  Serial.printf("[OTA] Installation confirmation pending: %s Retrying in %lu seconds.\n",
+                ota.lastError().c_str(), PendingConfirmationRetryMs / 1000UL);
+  display.showOtaStatus("Confirmation Pending", "Will retry automatically");
+}
 }  // namespace
 
 void setup() {
@@ -186,35 +235,15 @@ void setup() {
     return;
   }
 
-  ota.reportPendingInstallation();
-  Serial.println("[OTA] Checking for firmware updates");
-  bool updateScreenShown = false;
-  const OtaManager::Result otaResult = ota.checkAndInstall(
-      [&updateScreenShown](size_t received, size_t total) {
-        if (!updateScreenShown) {
-          display.showOtaStatus("Updating", "Downloading firmware");
-          updateScreenShown = true;
-        }
-        display.showOtaProgress(received, total);
-      });
-
-  if (otaResult == OtaManager::Result::NoUpdate) {
-    Serial.println("[OTA] Device firmware is current");
-    display.showConnected(Config::FIRMWARE_VERSION, WiFi.localIP(), hardwareId);
-  } else if (otaResult == OtaManager::Result::Installed) {
-    Serial.printf("[OTA] Version %s staged; restarting\n",
-                  ota.availableVersion().c_str());
-    display.showOtaStatus("Update Ready", "Restarting...");
-    delay(1500);
-    ESP.restart();
-  } else if (otaResult == OtaManager::Result::Failed) {
-    Serial.printf("[OTA] Update failed: %s\n", ota.lastError().c_str());
-    display.showConnected(Config::FIRMWARE_VERSION, WiFi.localIP(), hardwareId);
-  }
+  attemptPendingInstallationConfirmation();
 }
 
 void loop() {
-  // A consuming firmware application owns its runtime behavior. OTA is checked
-  // once during setup so this starter remains focused on the update lifecycle.
-  delay(1000);
+  if (pendingConfirmationRetry && WiFi.status() == WL_CONNECTED &&
+      static_cast<long>(millis() - nextPendingConfirmationAttempt) >= 0) {
+    attemptPendingInstallationConfirmation();
+  }
+  // A consuming firmware application owns its runtime behavior. The normal OTA
+  // check runs once, after any pending installation has been confirmed.
+  delay(100);
 }

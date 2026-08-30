@@ -87,10 +87,14 @@ bool OtaManager::reportInstallation(uint64_t releaseId, const String& eventId) {
 }
 
 bool OtaManager::reportPendingInstallation() {
+  lastError_ = "";
   if (!isConfigured()) return true;
 
   Preferences preferences;
-  if (!preferences.begin(OtaPreferencesNamespace, false)) return false;
+  if (!preferences.begin(OtaPreferencesNamespace, false)) {
+    lastError_ = "Unable to open pending installation state in NVS.";
+    return false;
+  }
   const uint64_t releaseId = preferences.getULong64(PendingReleaseKey, 0);
   const String expectedVersion = preferences.getString(PendingVersionKey, "");
   String pendingEventId = preferences.getString(PendingEventKey, "");
@@ -98,24 +102,42 @@ bool OtaManager::reportPendingInstallation() {
 
   if (releaseId == 0) return true;
   if (expectedVersion != Config::FIRMWARE_VERSION) {
-    Serial.printf("[OTA] Pending version %s did not boot; running %s\n",
-                  expectedVersion.c_str(), Config::FIRMWARE_VERSION);
+    lastError_ = "Pending installation expects firmware " + expectedVersion +
+                 ", but the running firmware is " +
+                 String(Config::FIRMWARE_VERSION) + ".";
     return false;
   }
 
   if (pendingEventId.isEmpty()) {
     pendingEventId = eventUuid();
-    if (!preferences.begin(OtaPreferencesNamespace, false)) return false;
+    if (!preferences.begin(OtaPreferencesNamespace, false)) {
+      lastError_ = "Unable to reopen pending installation state in NVS.";
+      return false;
+    }
     const bool saved = preferences.putString(PendingEventKey, pendingEventId) ==
                        pendingEventId.length();
     preferences.end();
-    if (!saved) return false;
+    if (!saved) {
+      lastError_ = "Unable to persist the pending installation event UUID.";
+      return false;
+    }
   }
   if (!sendEvent(releaseId, "installation_succeeded", "", "",
-                 pendingEventId)) return false;
-  if (preferences.begin(OtaPreferencesNamespace, false)) {
-    preferences.clear();
-    preferences.end();
+                 pendingEventId)) {
+    if (lastError_.isEmpty()) {
+      lastError_ = "The platform could not accept the installation confirmation.";
+    }
+    return false;
+  }
+  if (!preferences.begin(OtaPreferencesNamespace, false)) {
+    lastError_ = "Installation was accepted, but pending NVS state could not be opened for cleanup.";
+    return false;
+  }
+  const bool cleared = preferences.clear();
+  preferences.end();
+  if (!cleared) {
+    lastError_ = "Installation was accepted, but pending NVS state could not be cleared.";
+    return false;
   }
   Serial.printf("[OTA] Confirmed installation of version %s\n",
                 Config::FIRMWARE_VERSION);
@@ -368,15 +390,26 @@ bool OtaManager::sendEvent(uint64_t releaseId, const char* eventType,
   int statusCode = -1;
   if (url.startsWith("https://")) {
     configureTls(secureClient);
-    if (!beginRequest(http, secureClient, url)) return false;
+    if (!beginRequest(http, secureClient, url)) {
+      lastError_ = "Unable to start the installation event request.";
+      return false;
+    }
   } else {
-    if (!beginRequest(http, plainClient, url)) return false;
+    if (!beginRequest(http, plainClient, url)) {
+      lastError_ = "Unable to start the installation event request.";
+      return false;
+    }
   }
   addApiHeaders(http, deviceToken_);
   http.addHeader("Content-Type", "application/json");
   statusCode = http.POST(body);
   http.end();
-  return statusCode >= 200 && statusCode < 300;
+  if (statusCode < 200 || statusCode >= 300) {
+    lastError_ = "Installation event was rejected or not received (" +
+                 String(statusCode) + ").";
+    return false;
+  }
+  return true;
 }
 
 String OtaManager::endpoint(const char* path) const {
