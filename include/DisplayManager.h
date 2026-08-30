@@ -10,11 +10,14 @@ class DisplayManager {
   void showProvisioning(const String& accessPointName, const IPAddress& portalIp);
   void showConnected(const char* firmwareVersion, const IPAddress& deviceIp,
                      const String& hardwareId);
+  void showDeviceProvisioningQr(const String& provisioningUrl,
+                                const String& hardwareId);
   void showOtaStatus(const String& title, const String& detail = "");
   void showOtaProgress(size_t received, size_t total);
 
  private:
-  void drawQrCode(const String& value, int16_t centerX, int16_t centerY);
+  void drawQrCode(const String& value, int16_t centerX, int16_t centerY,
+                  uint8_t version = 4, int16_t moduleSize = 4);
   String majorVersionLabel(const char* semanticVersion) const;
 
   TFT_eSPI display_;

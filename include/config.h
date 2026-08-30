@@ -18,15 +18,22 @@
 #define ROUTEWAKER_OTA_ROOT_CA ""
 #endif
 
+#ifndef ROUTEWAKER_DEVICE_PROVISIONING_URL
+#define ROUTEWAKER_DEVICE_PROVISIONING_URL "https://ota.routewaker.com/devices/provision"
+#endif
+
 namespace Config
 {
 
     static constexpr char FIRMWARE_VERSION[] = "1.0.0";
     static constexpr char PRODUCT_NAME[] = "Route Waker Display";
     static constexpr char SETUP_AP_NAME[] = "Route Waker-Setup";
+    static constexpr char DEVICE_PROVISIONING_URL[] = ROUTEWAKER_DEVICE_PROVISIONING_URL;
 
     static constexpr uint32_t SERIAL_BAUD_RATE = 115200;
     static constexpr uint32_t SPLASH_DURATION_MS = 2000;
+    static constexpr uint8_t DEVICE_INFO_BUTTON_PIN = 0; // ESP32 BOOT button.
+    static constexpr uint16_t BUTTON_DEBOUNCE_MS = 50;
     static constexpr uint32_t WIFI_CONNECT_TIMEOUT_SECONDS = 20;
     static constexpr uint32_t PORTAL_TIMEOUT_SECONDS = 0; // Keep setup open until configured.
 

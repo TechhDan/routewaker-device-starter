@@ -18,4 +18,10 @@ String setupAccessPointName() {
   return String(Config::SETUP_AP_NAME) + "-" + id.substring(id.length() - 6);
 }
 
+String provisioningUrl() {
+  return String(Config::DEVICE_PROVISIONING_URL) +
+         "?hardware_id=" + hardwareId() +
+         "&firmware_version=" + Config::FIRMWARE_VERSION;
+}
+
 }  // namespace DeviceIdentity
