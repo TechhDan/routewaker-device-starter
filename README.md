@@ -9,13 +9,13 @@ tool used to register devices in the OTA platform.
 
 The **RouteWaker Device Provisioner** owns device registration and credential
 issuance. Use it before installing an application derived from this starter.
-The resulting per-device bearer token is injected into the firmware build via
-the ignored `include/ota_secrets.h` file.
+The resulting platform URL and per-device bearer token are transferred through
+the `rw-prov` NVS handoff when the provisioner installs this firmware.
 
 This starter owns the device-side OTA lifecycle:
 
-1. Connect to Wi-Fi, using a local setup access point when network credentials
-   have not been saved.
+1. Complete any pending provisioner handoff, then connect to customer Wi-Fi,
+   using a local setup access point when customer credentials have not been saved.
 2. Authenticate to the OTA API with a previously issued device token.
 3. Report the running semantic firmware version by heartbeat.
 4. Ask the platform whether a compatible release is available.
@@ -35,15 +35,17 @@ feedback. A real firmware application should retain the OTA calls while
 replacing the starter screen and empty runtime loop with its product-specific
 behavior.
 
-Copy `include/ota_secrets.example.h` to `include/ota_secrets.h` and provide the
-token issued for the device:
-
-```cpp
-#define ROUTEWAKER_OTA_DEVICE_TOKEN "rwd_token_issued_by_the_provisioner"
-```
-
-Production builds should also provide `ROUTEWAKER_OTA_ROOT_CA`. See
+Production devices obtain their API URL and permanent `rwd_...` token from the
+provisioner. `include/ota_secrets.h` remains available for an optional API URL
+override during development and for `ROUTEWAKER_OTA_ROOT_CA`; it never contains
+the device token. See
 `OTA_TESTING.md` for the end-to-end release test procedure.
+
+On the first production boot the starter connects only to the installer Wi-Fi,
+confirms the installed release, heartbeats the running version, stores only the
+platform URL and device token in `rw-device`, and then erases `rw-prov`,
+`rw-bootstrap`, and SDK installer Wi-Fi credentials before customer onboarding.
+Any activation failure retains the handoff for a later boot.
 
 ## What does not belong here
 

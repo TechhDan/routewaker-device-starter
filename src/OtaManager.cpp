@@ -16,6 +16,7 @@ namespace {
 constexpr char OtaPreferencesNamespace[] = "routewaker-ota";
 constexpr char PendingReleaseKey[] = "release";
 constexpr char PendingVersionKey[] = "version";
+constexpr char PendingEventKey[] = "event_id";
 
 bool validSha256(const String& value) {
   if (value.length() != 64) return false;
@@ -66,15 +67,23 @@ bool beginRequest(HTTPClient& http, Client& client, const String& url) {
   return http.begin(client, url);
 }
 
-void addApiHeaders(HTTPClient& http) {
+void addApiHeaders(HTTPClient& http, const String& deviceToken) {
   http.addHeader("Accept", "application/json");
-  http.addHeader("Authorization", "Bearer " + String(Config::OTA_DEVICE_TOKEN));
+  http.addHeader("Authorization", "Bearer " + deviceToken);
 }
 }  // namespace
 
+void OtaManager::configure(const String& platformUrl, const String& deviceToken) {
+  platformUrl_ = platformUrl;
+  deviceToken_ = deviceToken;
+}
+
 bool OtaManager::isConfigured() const {
-  return strlen(Config::OTA_API_BASE_URL) > 0 &&
-         strlen(Config::OTA_DEVICE_TOKEN) > 0;
+  return !platformUrl_.isEmpty() && deviceToken_.startsWith("rwd_");
+}
+
+bool OtaManager::reportInstallation(uint64_t releaseId, const String& eventId) {
+  return sendEvent(releaseId, "installation_succeeded", "", "", eventId);
 }
 
 bool OtaManager::reportPendingInstallation() {
@@ -84,6 +93,7 @@ bool OtaManager::reportPendingInstallation() {
   if (!preferences.begin(OtaPreferencesNamespace, false)) return false;
   const uint32_t releaseId = preferences.getUInt(PendingReleaseKey, 0);
   const String expectedVersion = preferences.getString(PendingVersionKey, "");
+  String pendingEventId = preferences.getString(PendingEventKey, "");
   preferences.end();
 
   if (releaseId == 0) return true;
@@ -93,7 +103,16 @@ bool OtaManager::reportPendingInstallation() {
     return false;
   }
 
-  if (!sendEvent(releaseId, "installation_succeeded")) return false;
+  if (pendingEventId.isEmpty()) {
+    pendingEventId = eventUuid();
+    if (!preferences.begin(OtaPreferencesNamespace, false)) return false;
+    const bool saved = preferences.putString(PendingEventKey, pendingEventId) ==
+                       pendingEventId.length();
+    preferences.end();
+    if (!saved) return false;
+  }
+  if (!sendEvent(releaseId, "installation_succeeded", "", "",
+                 pendingEventId)) return false;
   if (preferences.begin(OtaPreferencesNamespace, false)) {
     preferences.clear();
     preferences.end();
@@ -131,6 +150,7 @@ OtaManager::Result OtaManager::checkAndInstall(
   }
   preferences.putUInt(PendingReleaseKey, manifest.releaseId);
   preferences.putString(PendingVersionKey, manifest.version);
+  preferences.putString(PendingEventKey, eventUuid());
   preferences.end();
   return Result::Installed;
 }
@@ -156,7 +176,7 @@ bool OtaManager::sendHeartbeat() {
   } else {
     if (!beginRequest(http, plainClient, url)) return false;
   }
-  addApiHeaders(http);
+  addApiHeaders(http, deviceToken_);
   http.addHeader("Content-Type", "application/json");
   statusCode = http.POST(body);
   http.end();
@@ -182,7 +202,7 @@ bool OtaManager::fetchManifest(Manifest& manifest, bool& updateAvailable) {
   } else {
     if (!beginRequest(http, plainClient, url)) return false;
   }
-  addApiHeaders(http);
+  addApiHeaders(http, deviceToken_);
   statusCode = http.GET();
   if (statusCode > 0) response = http.getString();
   http.end();
@@ -238,7 +258,7 @@ bool OtaManager::downloadAndStage(const Manifest& manifest,
   } else if (!http.begin(plainClient, manifest.artifactUrl)) {
     return false;
   }
-  addApiHeaders(http);
+  addApiHeaders(http, deviceToken_);
   statusCode = http.GET();
   if (statusCode != HTTP_CODE_OK) {
     lastError_ = "Firmware download failed (" + String(statusCode) + ").";
@@ -308,11 +328,12 @@ bool OtaManager::downloadAndStage(const Manifest& manifest,
   return true;
 }
 
-bool OtaManager::sendEvent(uint32_t releaseId, const char* eventType,
+bool OtaManager::sendEvent(uint64_t releaseId, const char* eventType,
                            const String& failureCode,
-                           const String& failureMessage) {
+                           const String& failureMessage,
+                           const String& eventId) {
   JsonDocument document;
-  document["eventId"] = eventUuid();
+  document["eventId"] = eventId.isEmpty() ? eventUuid() : eventId;
   document["firmwareReleaseId"] = releaseId;
   document["eventType"] = eventType;
   if (!failureCode.isEmpty()) document["failureCode"] = failureCode;
@@ -331,7 +352,7 @@ bool OtaManager::sendEvent(uint32_t releaseId, const char* eventType,
   } else {
     if (!beginRequest(http, plainClient, url)) return false;
   }
-  addApiHeaders(http);
+  addApiHeaders(http, deviceToken_);
   http.addHeader("Content-Type", "application/json");
   statusCode = http.POST(body);
   http.end();
@@ -339,7 +360,7 @@ bool OtaManager::sendEvent(uint32_t releaseId, const char* eventType,
 }
 
 String OtaManager::endpoint(const char* path) const {
-  String baseUrl(Config::OTA_API_BASE_URL);
+  String baseUrl(platformUrl_);
   while (baseUrl.endsWith("/")) baseUrl.remove(baseUrl.length() - 1);
   return baseUrl + path;
 }

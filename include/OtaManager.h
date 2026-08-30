@@ -8,8 +8,11 @@ class OtaManager {
   enum class Result { Disabled, NoUpdate, Installed, Failed };
   using ProgressCallback = std::function<void(size_t received, size_t total)>;
 
+  void configure(const String& platformUrl, const String& deviceToken);
   bool isConfigured() const;
   bool reportPendingInstallation();
+  bool reportInstallation(uint64_t releaseId, const String& eventId);
+  bool sendHeartbeat();
   Result checkAndInstall(const ProgressCallback& progress = nullptr);
   const String& availableVersion() const;
   const String& lastError() const;
@@ -23,15 +26,17 @@ class OtaManager {
     size_t artifactSize = 0;
   };
 
-  bool sendHeartbeat();
   bool fetchManifest(Manifest& manifest, bool& updateAvailable);
   bool downloadAndStage(const Manifest& manifest,
                         const ProgressCallback& progress);
-  bool sendEvent(uint32_t releaseId, const char* eventType,
+  bool sendEvent(uint64_t releaseId, const char* eventType,
                  const String& failureCode = "",
-                 const String& failureMessage = "");
+                 const String& failureMessage = "",
+                 const String& eventId = "");
   String endpoint(const char* path) const;
 
   String availableVersion_;
   String lastError_;
+  String platformUrl_;
+  String deviceToken_;
 };

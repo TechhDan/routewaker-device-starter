@@ -1,9 +1,14 @@
 #include <Arduino.h>
 #include <time.h>
+#include <WiFi.h>
+#include <esp_ota_ops.h>
+#include <esp_system.h>
 
+#include "DeviceConfiguration.h"
 #include "DisplayManager.h"
 #include "DeviceIdentity.h"
 #include "OtaManager.h"
+#include "ProvisioningHandoff.h"
 #include "WiFiProvisioning.h"
 #include "config.h"
 
@@ -13,9 +18,24 @@ WiFiProvisioning wifi;
 OtaManager ota;
 String hardwareId;
 
-bool otaNeedsTrustedClock() {
-  return String(Config::OTA_API_BASE_URL).startsWith("https://") &&
+bool otaNeedsTrustedClock(const String& platformUrl) {
+  return platformUrl.startsWith("https://") &&
          strlen(Config::OTA_ROOT_CA) > 0;
+}
+
+String eventUuid() {
+  uint8_t bytes[16];
+  esp_fill_random(bytes, sizeof(bytes));
+  bytes[6] = (bytes[6] & 0x0F) | 0x40;
+  bytes[8] = (bytes[8] & 0x3F) | 0x80;
+  char output[37];
+  snprintf(output, sizeof(output),
+           "%02x%02x%02x%02x-%02x%02x-%02x%02x-%02x%02x-"
+           "%02x%02x%02x%02x%02x%02x",
+           bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5],
+           bytes[6], bytes[7], bytes[8], bytes[9], bytes[10], bytes[11],
+           bytes[12], bytes[13], bytes[14], bytes[15]);
+  return String(output);
 }
 
 bool synchronizeClock() {
@@ -42,6 +62,73 @@ bool synchronizeClock() {
   Serial.printf("[TIME] Clock synchronized: %s\n", timestamp);
   return true;
 }
+
+bool connectInstallerWiFi(const ProvisioningHandoff& handoff) {
+  Serial.printf("[HANDOFF] Connecting to installer Wi-Fi: %s\n",
+                handoff.ssid.c_str());
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(handoff.ssid.c_str(), handoff.password.c_str());
+  const unsigned long startedAt = millis();
+  while (WiFi.status() != WL_CONNECTED &&
+         millis() - startedAt < Config::WIFI_CONNECT_TIMEOUT_SECONDS * 1000UL) {
+    delay(250);
+  }
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("[HANDOFF] Installer Wi-Fi connection failed; handoff retained");
+    return false;
+  }
+  Serial.printf("[HANDOFF] Connected with IP %s\n",
+                WiFi.localIP().toString().c_str());
+  return true;
+}
+
+bool completeProvisionerHandoff(ProvisioningHandoff& handoff) {
+  if (handoff.expectedVersion != Config::FIRMWARE_VERSION) {
+    Serial.printf("[HANDOFF] Expected firmware %s, but running %s; handoff retained\n",
+                  handoff.expectedVersion.c_str(), Config::FIRMWARE_VERSION);
+    return false;
+  }
+  if (!connectInstallerWiFi(handoff)) return false;
+  if (otaNeedsTrustedClock(handoff.platformUrl) && !synchronizeClock()) return false;
+  if (!DeviceConfiguration::save(handoff.platformUrl, handoff.deviceToken)) {
+    Serial.println("[HANDOFF] Permanent device identity could not be stored");
+    return false;
+  }
+  ota.configure(handoff.platformUrl, handoff.deviceToken);
+  if (handoff.eventId.isEmpty()) {
+    handoff.eventId = eventUuid();
+    if (!ProvisioningHandoff::saveEventId(handoff.eventId)) {
+      Serial.println("[HANDOFF] Stable installation event ID could not be stored");
+      return false;
+    }
+  }
+  if (!ota.reportInstallation(handoff.releaseId, handoff.eventId)) {
+    Serial.println("[HANDOFF] Installation confirmation failed; handoff retained");
+    return false;
+  }
+  if (!ota.sendHeartbeat()) {
+    Serial.printf("[HANDOFF] Heartbeat failed: %s; handoff retained\n",
+                  ota.lastError().c_str());
+    return false;
+  }
+
+  const esp_err_t validation = esp_ota_mark_app_valid_cancel_rollback();
+  if (validation != ESP_OK && validation != ESP_ERR_NOT_SUPPORTED) {
+    Serial.printf("[HANDOFF] Could not mark application valid: %d\n", validation);
+    return false;
+  }
+  if (!WiFi.disconnect(true, true)) {
+    Serial.println("[HANDOFF] SDK installer Wi-Fi credentials could not be erased");
+    return false;
+  }
+  if (!ProvisioningHandoff::clearBootstrap() || !ProvisioningHandoff::clear()) {
+    Serial.println("[HANDOFF] Provisioning namespaces could not be cleared");
+    return false;
+  }
+  delay(250);
+  Serial.println("[HANDOFF] Provisioner data and installer Wi-Fi erased");
+  return true;
+}
 }  // namespace
 
 void setup() {
@@ -58,6 +145,26 @@ void setup() {
   display.showSplash(hardwareId);
   delay(Config::SPLASH_DURATION_MS);
 
+  ProvisioningHandoff handoff;
+  const bool handoffPending = ProvisioningHandoff::isPending();
+  const bool handoffValid = ProvisioningHandoff::load(handoff);
+  if (handoffPending && !handoffValid) {
+    Serial.println("[HANDOFF] Pending handoff is incomplete or invalid; onboarding blocked");
+    display.showOtaStatus("Activation Failed", "Invalid installer handoff");
+    delay(5000);
+    ESP.restart();
+  }
+  if (handoffValid) {
+    Serial.println("[HANDOFF] Pending production installation found");
+    display.showOtaStatus("Activating", "Confirming installation");
+    if (!completeProvisionerHandoff(handoff)) {
+      display.showOtaStatus("Activation Failed", "Will retry after restart");
+      delay(5000);
+      ESP.restart();
+    }
+    Serial.println("[HANDOFF] Installation confirmed; starting customer onboarding");
+  }
+
   if (!wifi.connect(display)) {
     Serial.println("[WIFI] Restarting after provisioning failure");
     delay(3000);
@@ -67,12 +174,14 @@ void setup() {
   display.showConnected(Config::FIRMWARE_VERSION, WiFi.localIP(), hardwareId);
   Serial.println("[APP] Main screen loaded");
 
-  if (!ota.isConfigured()) {
-    Serial.println("[OTA] Disabled: include/ota_secrets.h is not configured");
+  DeviceConfiguration configuration;
+  if (!DeviceConfiguration::load(configuration)) {
+    Serial.println("[OTA] Disabled: no permanent device identity is stored");
     return;
   }
+  ota.configure(configuration.platformUrl, configuration.deviceToken);
 
-  if (otaNeedsTrustedClock() && !synchronizeClock()) {
+  if (otaNeedsTrustedClock(configuration.platformUrl) && !synchronizeClock()) {
     Serial.println("[OTA] Skipped because the TLS certificate cannot be validated");
     return;
   }

@@ -10,10 +10,6 @@
 #define ROUTEWAKER_OTA_API_BASE_URL "https://ota.routewaker.com"
 #endif
 
-#ifndef ROUTEWAKER_OTA_DEVICE_TOKEN
-#define ROUTEWAKER_OTA_DEVICE_TOKEN ""
-#endif
-
 #ifndef ROUTEWAKER_OTA_ROOT_CA
 #define ROUTEWAKER_OTA_ROOT_CA ""
 #endif
@@ -35,7 +31,6 @@ namespace Config
     static constexpr uint16_t NTP_SYNC_TIMEOUT_MS = 15000;
 
     static constexpr char OTA_API_BASE_URL[] = ROUTEWAKER_OTA_API_BASE_URL;
-    static constexpr char OTA_DEVICE_TOKEN[] = ROUTEWAKER_OTA_DEVICE_TOKEN;
     static constexpr char OTA_ROOT_CA[] = ROUTEWAKER_OTA_ROOT_CA;
     static constexpr uint16_t OTA_REQUEST_TIMEOUT_MS = 15000;
     static constexpr uint16_t OTA_DOWNLOAD_TIMEOUT_MS = 20000;

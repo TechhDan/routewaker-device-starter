@@ -26,12 +26,9 @@ Hardware revision: esp32-2432s028-v1
 Release channel: stable
 ```
 
-Copy `include/ota_secrets.example.h` to `include/ota_secrets.h`, then set the
-device token:
-
-```cpp
-#define ROUTEWAKER_OTA_DEVICE_TOKEN "rwd_token_issued_by_the_provisioner"
-```
+Install the starter through the Device Provisioner. It writes the temporary
+installer network plus the platform URL, device token, release ID, and expected
+version to `rw-prov`. The starter permanently copies only the URL and token.
 
 The firmware defaults to the production API at `https://ota.routewaker.com`.
 For local development, override it with the development host already used by
@@ -63,8 +60,9 @@ every PEM line and a trailing `\` on every macro line except the last; see
 
 ## Run the v1 to v2 test
 
-1. Configure the API URL and token and upload firmware `1.0.0` over USB.
-2. Confirm the serial log contains `[OTA] Heartbeat accepted`.
+1. Publish firmware `1.0.0` and install it through the Device Provisioner.
+2. Confirm the serial log shows handoff confirmation followed by
+   `[OTA] Heartbeat accepted`, then complete customer Wi-Fi onboarding.
 3. Change `FIRMWARE_VERSION` in `include/config.h` to `2.0.0` and build again.
 4. Calculate the SHA-256 of `.pio/build/esp32dev/firmware.bin`.
 5. In the platform, create a `2.0.0` release whose model, hardware revision,
