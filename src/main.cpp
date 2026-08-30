@@ -12,11 +12,6 @@ DisplayManager display;
 WiFiProvisioning wifi;
 OtaManager ota;
 String hardwareId;
-String provisioningUrl;
-bool provisioningQrVisible = false;
-bool lastRawButtonState = HIGH;
-bool stableButtonState = HIGH;
-unsigned long buttonChangedAt = 0;
 
 bool otaNeedsTrustedClock() {
   return String(Config::OTA_API_BASE_URL).startsWith("https://") &&
@@ -57,11 +52,7 @@ void setup() {
   Serial.printf("[BOOT] %s firmware starting\n", Config::PRODUCT_NAME);
   Serial.printf("[BOOT] Firmware version: %s\n", Config::FIRMWARE_VERSION);
   hardwareId = DeviceIdentity::hardwareId();
-  provisioningUrl = DeviceIdentity::provisioningUrl();
   Serial.printf("[DEVICE] Hardware ID: %s\n", hardwareId.c_str());
-  Serial.println("[DEVICE] Press BOOT to show the provisioning QR code");
-
-  pinMode(Config::DEVICE_INFO_BUTTON_PIN, INPUT_PULLUP);
 
   display.begin();
   display.showSplash(hardwareId);
@@ -114,26 +105,7 @@ void setup() {
 }
 
 void loop() {
-  const bool rawButtonState =
-      digitalRead(Config::DEVICE_INFO_BUTTON_PIN);
-  if (rawButtonState != lastRawButtonState) {
-    lastRawButtonState = rawButtonState;
-    buttonChangedAt = millis();
-  }
-
-  if (millis() - buttonChangedAt >= Config::BUTTON_DEBOUNCE_MS &&
-      stableButtonState != rawButtonState) {
-    stableButtonState = rawButtonState;
-    if (stableButtonState == LOW) {
-      provisioningQrVisible = !provisioningQrVisible;
-      if (provisioningQrVisible) {
-        display.showDeviceProvisioningQr(provisioningUrl, hardwareId);
-      } else {
-        display.showConnected(Config::FIRMWARE_VERSION, WiFi.localIP(),
-                              hardwareId);
-      }
-    }
-  }
-
-  delay(10);
+  // A consuming firmware application owns its runtime behavior. OTA is checked
+  // once during setup so this starter remains focused on the update lifecycle.
+  delay(1000);
 }

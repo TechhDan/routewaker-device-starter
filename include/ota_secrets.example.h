@@ -5,7 +5,9 @@
 // URL here only when testing against a locally hosted platform reachable by
 // the device (localhost will refer to the ESP32 itself).
 // #define ROUTEWAKER_OTA_API_BASE_URL "http://192.168.1.98:8000"
-#define ROUTEWAKER_OTA_DEVICE_TOKEN "rwd_replace_with_device_create_token"
+// Obtain this credential by registering the device with the separate
+// RouteWaker Device Provisioner. This firmware does not register devices.
+#define ROUTEWAKER_OTA_DEVICE_TOKEN "rwd_token_issued_by_the_provisioner"
 
 // Recommended for production: provide the PEM root CA that signs the API URL.
 // Leave undefined during initial testing to use insecure TLS (logged at boot).

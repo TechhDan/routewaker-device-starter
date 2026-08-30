@@ -10,13 +10,11 @@ The firmware implements the device API contract from
 5. Verify its declared byte length and SHA-256 before activation.
 6. Report download and installation telemetry.
 
-## Configure a test device
+## Register a test device
 
-On the Laravel platform, run:
-
-```sh
-php artisan device:create
-```
+Register the device with the **RouteWaker Device Provisioner**. Registration is
+deliberately external to this starter firmware; this repository only consumes
+the per-device credential produced by that workflow.
 
 Use a unique hardware ID. The device model, hardware revision, and release
 channel must exactly match the firmware release you later create. A suitable
@@ -32,7 +30,7 @@ Copy `include/ota_secrets.example.h` to `include/ota_secrets.h`, then set the
 device token:
 
 ```cpp
-#define ROUTEWAKER_OTA_DEVICE_TOKEN "rwd_the_one_time_token"
+#define ROUTEWAKER_OTA_DEVICE_TOKEN "rwd_token_issued_by_the_provisioner"
 ```
 
 The firmware defaults to the production API at `https://ota.routewaker.com`.

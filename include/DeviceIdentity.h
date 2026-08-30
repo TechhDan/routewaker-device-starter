@@ -8,6 +8,5 @@ namespace DeviceIdentity {
 // factory-programmed eFuse MAC address.
 String hardwareId();
 String setupAccessPointName();
-String provisioningUrl();
 
 }  // namespace DeviceIdentity

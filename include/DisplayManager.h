@@ -10,8 +10,6 @@ class DisplayManager {
   void showProvisioning(const String& accessPointName, const IPAddress& portalIp);
   void showConnected(const char* firmwareVersion, const IPAddress& deviceIp,
                      const String& hardwareId);
-  void showDeviceProvisioningQr(const String& provisioningUrl,
-                                const String& hardwareId);
   void showOtaStatus(const String& title, const String& detail = "");
   void showOtaProgress(size_t received, size_t total);
 
